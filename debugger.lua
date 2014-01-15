@@ -300,7 +300,8 @@ is a table, lists all fields to the given depth. <var> can be just a
 name, or name.field or name.# to any depth, e.g. t.1.f accesses field
 'f' in array element 1 in table 't'.
 
-Can also be called from a script as dump(var,depth).
+Can also be called from a script as dump(var,depth). Therefore it is
+a global function and thus visible with 'glob'.
 ]],
 
 tron    = [[
