@@ -1114,7 +1114,7 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
             io.write('Cannot get info for '..v..'\n')
           end
         else
-          io.write(v..' is not a function\n')
+          io.write(tostring(n)..' ('..tostring(v)..') is not a function\n')
         end
       else
         io.write("Bad request\n")
