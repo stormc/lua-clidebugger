@@ -35,7 +35,7 @@
 --{{{  description
 
 --A simple command line debug system for Lua written by Dave Nichols of
---Match-IT Limited. Its public domain software. Do with it as you wish.
+--Match-IT Limited. It's public domain software. Do with it as you wish.
 
 --This debugger was inspired by:
 -- RemDebug 1.0 Beta
@@ -213,7 +213,7 @@ If N is omitted, use 1.
 ]],
 
 out     = [[
-out [N]             -- run lines until stepped out of N functions|
+out [N]             -- run until stepped out of N functions|
 
 If N is omitted, use 1.
 If you are inside a function, using "out 1" will run until you return
@@ -221,7 +221,7 @@ from that function to the caller.
 ]],
 
 gotoo   = [[
-gotoo [line file]    -- step to line in file|
+gotoo [line file]   -- step to line in file|
 
 This is equivalent to 'setb line file', followed by 'run', followed
 by 'delb line file'.
@@ -304,7 +304,7 @@ Can also be called from a script as dump(var,depth).
 ]],
 
 tron    = [[
-tron [crl]          -- turn trace on for (c)alls, (r)etuns, (l)lines|
+tron [crl]          -- turn trace on for (c)alls, (r)eturns, (l)ines|
 
 If no parameter is given then tracing is turned off.
 When tracing is turned on a line is printed to the console for each
@@ -466,7 +466,7 @@ local function show(file,line,before,after)
   local f = io.open(file,'r')
   if not f then
     --{{{  try to find the file in the path
-    
+
     --
     -- looks for a file in the package path
     --
@@ -478,7 +478,7 @@ local function show(file,line,before,after)
         break
       end
     end
-    
+
     --}}}
     if not f then
       io.write('Cannot find '..file..'\n')
@@ -660,13 +660,13 @@ local function capture_vars(ref,level,line)
   local lvl = ref + level                --NB: This includes an offset of +1 for the call to here
 
   --{{{  capture variables
-  
+
   local ar = debug.getinfo(lvl, "f")
   if not ar then return {},'?',0 end
-  
+
   local vars = {__UPVALUES__={}, __LOCALS__={}}
   local i
-  
+
   local func = ar.func
   if func then
     i = 1
@@ -681,9 +681,9 @@ local function capture_vars(ref,level,line)
     end
     vars.__ENVIRONMENT__ = getfenv(func)
   end
-  
+
   vars.__GLOBALS__ = getfenv(0)
-  
+
   i = 1
   while true do
     local name, value = debug.getlocal(lvl, i)
@@ -694,16 +694,16 @@ local function capture_vars(ref,level,line)
     end
     i = i + 1
   end
-  
+
   vars.__VARSLEVEL__ = level
-  
+
   if func then
     --NB: Do not do this until finished filling the vars table
     setmetatable(vars, { __index = getfenv(func), __newindex = getfenv(func) })
   end
-  
+
   --NB: Do not read or write the vars table anymore else the metatable functions will get invoked!
-  
+
   --}}}
 
   local file = getinfo(lvl, "source")
@@ -864,7 +864,7 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
   local command, args
 
   --{{{  local function getargs(spec)
-  
+
   --get command arguments according to the given spec from the args string
   --the spec has a single character for each argument, arguments are separated
   --by white space, the spec characters can be one of:
@@ -873,7 +873,7 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
   -- N for a number
   -- V for a variable name
   -- S for a string
-  
+
   local function getargs(spec)
     local res={}
     local char,arg
@@ -906,7 +906,7 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
     end
     return unpack(res)
   end
-  
+
   --}}}
 
   while true do
@@ -923,7 +923,7 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
 
     if command == "setb" then
       --{{{  set breakpoint
-      
+
       local line, filename  = getargs('LF')
       if filename ~= '' and line ~= '' then
         set_breakpoint(filename,line)
@@ -931,12 +931,12 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
       else
         io.write("Bad request\n")
       end
-      
+
       --}}}
 
     elseif command == "delb" then
       --{{{  delete breakpoint
-      
+
       local line, filename = getargs('LF')
       if filename ~= '' and line ~= '' then
         remove_breakpoint(filename, line)
@@ -944,7 +944,7 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
       else
         io.write("Bad request\n")
       end
-      
+
       --}}}
 
     elseif command == "delallb" then
@@ -964,7 +964,7 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
 
     elseif command == "setw" then
       --{{{  set watch expression
-      
+
       if args and args ~= '' then
         local func = loadstring("return(" .. args .. ")")
         local newidx = #watches + 1
@@ -973,12 +973,12 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
       else
         io.write("Bad request\n")
       end
-      
+
       --}}}
 
     elseif command == "delw" then
       --{{{  delete watch expression
-      
+
       local index = tonumber(args)
       if index then
         watches[index] = nil
@@ -986,7 +986,7 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
       else
         io.write("Bad request\n")
       end
-      
+
       --}}}
 
     elseif command == "delallw" then
@@ -1146,17 +1146,17 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
 
     elseif command == "show" then
       --{{{  show file around a line or the current breakpoint
-      
+
       local line, file, before, after = getargs('LFNN')
       if before == 0 then before = 10     end
       if after  == 0 then after  = before end
-      
+
       if file ~= '' and file ~= "=stdin" then
         show(file,line,before,after)
       else
         io.write('Nothing to show\n')
       end
-      
+
       --}}}
 
     elseif command == "poff" then
@@ -1215,10 +1215,10 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
 
     elseif line ~= '' then
       --{{{  just execute whatever it is in the current context
-      
+
       --map line starting with "=..." to "return ..."
       if string.sub(line,1,1) == '=' then line = string.gsub(line,'=','return ',1) end
-      
+
       local ok, func = pcall(loadstring,line)
       if func == nil then                             --Michael.Bringmann@lsi.com
         io.write("Compile error: "..line..'\n')
@@ -1242,7 +1242,7 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
           io.write("Run error: "..res[2]..'\n')
         end
       end
-      
+
       --}}}
     end
   end
