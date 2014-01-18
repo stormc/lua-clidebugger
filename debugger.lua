@@ -1103,7 +1103,7 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
         local v = eval_env
         local n = nil
         for w in string.gmatch(args,"[%w_]+") do
-          v = v[w]
+          if type(v) == 'table' then v = v[w] end
           if n then n = n..'.'..w else n = w end
           if not v then break end
         end
@@ -1134,7 +1134,7 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
           if tonumber(w) then
             v = v[tonumber(w)]
           else
-            v = v[w]
+            if type(v) == 'table' then v = v[w] end
           end
           if n then n = n..'.'..w else n = w end
           if not v then break end
