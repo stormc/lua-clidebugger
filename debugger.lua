@@ -452,47 +452,58 @@ local function dumpvar( value, limit, name )
 end
 
 --}}}
---{{{  local function show(file,line,before,after)
+--{{{  local function show(breakfile,breakline,file,line,before,after)
 
---show +/-N lines of a file around line M
+-- show +/-N lines of a file around line M highlighting the current breakpoint line if any
 
-local function show(file,line,before,after)
+local function show(breakfile,breakline,file,line,before,after)
 
-  line   = tonumber(line   or 1)
-  before = tonumber(before or 10)
-  after  = tonumber(after  or before)
+  local function basename(filename)
+    return IsWindows
+      and string.gsub(filename, '[^\\]*\\', '')
+      or  string.gsub(filename, '[^/]*/', '')
+  end
 
-  if not string.find(file,'%.') then file = file..'.lua' end
+  line      = tonumber(line   or 1)
+  before    = tonumber(before or 10)
+  after     = tonumber(after  or before)
+  breakfile = basename(breakfile)
 
-  local f = io.open(file,'r')
+  if not string.find(file, '%.') then file = file..'.lua' end
+
+  local f = io.open(file, 'r')
   if not f then
-    --{{{  try to find the file in the path
-
-    --
-    -- looks for a file in the package path
-    --
+    -- look for a matching file in the package path
     local path = package.path or LUA_PATH or ''
-    for c in string.gmatch (path, "[^;]+") do
-      local c = string.gsub (c, "%?%.lua", file)
-      f = io.open (c,'r')
+    for c in string.gmatch(path, "[^;]+") do
+      local c = string.gsub(c, "%?%.lua", file)
+      f = io.open(c, 'r')
       if f then
+        file = c
         break
       end
     end
-
-    --}}}
     if not f then
       io.write('Cannot find '..file..'\n')
       return
     end
   end
 
+  local _, _, code = f:read(0)
+  if code == 21 then
+    io.write(file..' is a directory!\n')
+    f:close()
+    return
+  end
+
+  file = basename(file)
+
   local i = 0
   for l in f:lines() do
     i = i + 1
     if i >= (line-before) then
       if i > (line+after) then break end
-      if i == line then
+      if i == breakline and file == breakfile then
         io.write(i..'***\t'..l..'\n')
       else
         io.write(i..'\t'..l..'\n')
@@ -1153,7 +1164,7 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
       if after  == 0 then after  = before end
 
       if file ~= '' and file ~= "=stdin" then
-        show(file,line,before,after)
+        show(breakfile,breakline,file,line,before,after)
       else
         io.write('Nothing to show\n')
       end
