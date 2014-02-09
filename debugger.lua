@@ -1211,7 +1211,8 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
       --{{{  help
       local command = getargs('S')
       if command ~= '' and hints[command] then
-        io.write(hints[command]..'\n')
+        local _,_,description = string.find(hints[command],"|(.+)")
+        io.write(string.match(hints[command],"(.+)|")..description..'\n')
       else
         for _,v in pairs(hints) do
           local _,_,h = string.find(v,"(.+)|")
