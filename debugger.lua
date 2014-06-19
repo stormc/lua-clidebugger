@@ -30,6 +30,7 @@
 --             (https://github.com/ColonelThirtyTwo/clidebugger, 26/01/12)
 --25/07/13 DCN Allow for windows and unix file name conventions in has_breakpoint
 --26/07/13 DCN Allow for \ being interpreted as an escape inside a [] pattern in 5.2
+--10/02/14 CS  Readline support
 
 --}}}
 --{{{  description
@@ -71,6 +72,61 @@ local pause_off = false
 local _g      = _G
 local cocreate, cowrap = coroutine.create, coroutine.wrap
 local pausemsg = 'pause'
+
+-- readline support if libclidebugger.so is available,
+-- color support if running in a terminal, and
+-- command shortcut support if the terminal is supported
+local libreadline, readline, saveline, rlbinds = {}
+local prompt = ">> "
+local color = {
+        ["black"] = '',
+        ["white"] = '',
+        ["green"] = '',
+        ["blue" ] = '',
+        ["red"  ] = '',
+        ["reset"] = ''
+      }
+if pcall(function() libreadline = require('libclidebugger') end) then
+  readline = libreadline.readline
+  saveline = libreadline.add_history
+  if libreadline.isatty(io.stdout) then
+    color = {
+      ["black"] = '\27[1;30m',
+      ["white"] = '\27[1;37m',
+      ["green"] = '\27[1;32m',
+      ["blue" ] = '\27[1;34m',
+      ["red"  ] = '\27[1;31m',
+      ["reset"] = '\27[0m'
+    }
+    prompt = libreadline.rlpsi .. color.blue .. libreadline.rlpei ..
+             prompt ..
+             libreadline.rlpsi .. color.reset .. libreadline.rlpei ..
+             '\0'
+    libreadline.setprompt(prompt)
+    if string.find(os.getenv("TERM"), "^[u]?rxvt") then
+      rlbinds = {
+        ["help" ] = {["key"]="F1",       ["rlbinding"]='"\\e[11~": "help\\n"'},
+        ["step" ] = {["key"]="F7",       ["rlbinding"]='"\\e[18~": "step\\n"'},
+        ["dump" ] = {["key"]="ALT+F7",   ["rlbinding"]='"\\e\\e[18~": "dump \\t"'},
+        ["over" ] = {["key"]="F8",       ["rlbinding"]='"\\e[19~": "over\\n"'},
+        ["out"  ] = {["key"]="SHIFT+F8", ["rlbinding"]='"\\e[32~": "out\\n"'},
+        ["eval" ] = {["key"]="ALT+F8",   ["rlbinding"]='"\\e\\e[19~": "eval \\t"'},
+        ["listb"] = {["key"]="CTRL+F8",  ["rlbinding"]='"\\e[19^": "listb\\n"'},
+        ["run"  ] = {["key"]="F9",       ["rlbinding"]='"\\e[20~": "run\\n"'},
+        ["show" ] = {["key"]="CTRL+RET", ["rlbinding"]='"\\eQ1;32~": "show\\n"'}
+      }
+      for _, v in pairs(rlbinds) do
+        libreadline.bindkey(v["rlbinding"])
+      end
+    end
+  end
+else
+  readline = function(prompt)
+    io.write(prompt)
+    return io.read("*line")
+  end
+  saveline = function(s) end
+end
 
 --{{{  make Lua 5.2 compatible
 
@@ -345,8 +401,8 @@ help    = [[
 help [command]      -- show this list or help for command|
 ]],
 
-["<statement>"] = [[
-<statement>         -- execute a statement in the current context|
+eval    = [[
+eval <statement>    -- execute a statement in the current context|
 
 The statement can be anything that is legal in the context, including
 assignments. Such assignments affect the context and will be in force
@@ -361,6 +417,204 @@ what <func>         -- show where <func> is defined (if known)|
 
 }
 --}}}
+
+-- This function is called back by libclidebugger's do_completion() which is
+-- itself called back by the readline library in order to complete input.
+if package.loaded.libclidebugger then
+  libreadline._set(
+    function (word, line, startpos, endpos)
+      local matches = {}
+
+      -- Helper function registering possible completion words, verifying matches
+      local function add(value)
+        value = tostring(value)
+        if value:match("^" .. word) then matches[#matches + 1] = value end
+      end
+
+      -- Append type-indicating character to an identifier
+      local function postfix(value)
+        local t = type(value)
+        if t == 'function' or (getmetatable(value) or {}).__call then return '('
+        elseif t == 'table' and #value > 0 then return '['
+        elseif t == 'table' then return '.'
+        else return ' '
+        end
+      end
+
+      -- Add completions for debugger commands
+      local function add_command_list(str)
+        for c, _ in pairs(hints) do add(c .. ' ') end
+      end
+
+      -- Add completions for the execution environment's entries
+      local function add_eval_env(what)
+        local eval_env = __getevalenv__()
+        for k in pairs(eval_env.__LOCALS__) do
+          -- The type of locals cannot be easily inferred here, so no postfix() call.
+          -- Alike, local functions will not become completion candidates for the 'what' command.
+          -- In order to do so, __LOCALS__ must be enriched with type information.
+          -- Another option is to find and use the respective local's "stackframe", see, e.g., the 'set' command.
+          if what ~= "funconly" then
+            add(eval_env.__LOCALS__[k])
+          end
+        end
+        for k in pairs(eval_env.__UPVALUES__) do
+          if what == "funconly" then
+            if type(eval_env.__UPVALUES__[k]) == 'function' or (getmetatable(eval_env.__UPVALUES__[k]) or {}).__call then
+              add(eval_env.__UPVALUES__[k])
+            end
+          else
+            if eval_env.__UPVALUES__[k] == "_ENV" then add("_ENV.")
+            else add(eval_env.__UPVALUES__[k] .. postfix(_ENV[eval_env.__UPVALUES__[k]])) end
+          end
+        end
+        for k in pairs(eval_env.__GLOBALS__) do
+          if k ~= "__getevalenv__" and k ~= "__gettraceinfo__" then
+            if what == "funconly" then
+              if type(eval_env.__GLOBALS__[k]) == 'function' or (getmetatable(eval_env.__GLOBALS__[k]) or {}).__call then
+                add(k)
+              end
+            else
+              add(k .. postfix(eval_env.__GLOBALS__[k]))
+            end
+          end
+        end
+      end
+
+      -- Add completions for the stack level used in 'set' command
+      local function add_stack_level()
+        io.write('\n')
+        for level, ar in ipairs(__gettraceinfo__()) do
+          io.write('['..level..']\t'..(ar.name or ar.what)..' in '..ar.short_src..':'..ar.currentline..'\n')
+          add(level)
+        end
+        if #matches < 2 then libreadline.redisplay() end
+      end
+
+      -- Add completions for the list of watches
+      local function add_watch_index()
+        io.write('\n')
+        for i, v in pairs(watches) do
+          io.write("Watch exp. " .. i .. ": " .. v.exp..'\n')
+          add(i)
+        end
+        if #matches < 2 then libreadline.redisplay() end
+      end
+
+      -- Simplify the input line, by removing
+      --   literal strings,
+      --   full table constructors, and
+      --   balanced groups of parentheses.
+      -- Returns
+      --   the sub-expression preceding the word,
+      --   the separator item ( '.', ':', '[', '(' ), and
+      --   the current string in case of an unfinished string literal.
+      local function simplify_expression(expr)
+        -- Replace annoying sequences \' and \" inside literal strings
+        expr = expr:gsub("\\(['\"])", function (c)
+                                        return string.format("\\%03d", string.byte(c))
+                                      end)
+        local curstring
+        -- Remove (finished and unfinished) literal strings
+        while true do
+          local idx1, _, equals = expr:find("%[(=*)%[")
+          local idx2, _, sign = expr:find("(['\"])")
+          if idx1 == nil and idx2 == nil then
+            break
+          end
+          local idx, startpat, endpat
+          if (idx1 or math.huge) < (idx2 or math.huge) then
+            idx, startpat, endpat = idx1, "%[" .. equals .. "%[", "%]" .. equals .. "%]"
+          else
+            idx, startpat, endpat = idx2, sign, sign
+          end
+          if expr:sub(idx):find("^" .. startpat .. ".-" .. endpat) then
+            expr = expr:gsub(startpat .. "(.-)" .. endpat, " STRING ")
+          else
+            expr = expr:gsub(startpat .. "(.*)", function (str)
+                                                   curstring = str
+                                                   return "(CURSTRING "
+                                                 end)
+          end
+        end
+        expr = expr:gsub("%b()"," PAREN ") -- Remove groups of parentheses
+        expr = expr:gsub("%b{}"," TABLE ") -- Remove table constructors
+        -- Avoid two consecutive words without operator
+        expr = expr:gsub("(%w)%s+(%w)","%1|%2")
+        expr = expr:gsub("%s+", "") -- Remove now useless spaces
+        -- This main regular expression looks for table indexes and function calls.
+        return curstring, expr:match("([%.%w%[%]_]-)([:%.%[%(])" .. word .. "$")
+      end
+
+      -- Main completion dispatcher function
+      local function complete_command(linetoken, currentwordnr, dbgcommand)
+        if dbgcommand == nil then
+          add_command_list()
+        else          
+          if dbgcommand == "delb" then
+            for i, v in pairs(breakpoints) do
+              for ii, vv in pairs(v) do
+                add(i..' '..ii)
+              end
+            end
+          elseif dbgcommand == "setb" or dbgcommand == "gotoo" then
+            if currentwordnr == 2 then matches = {"0", "1", "2", "..."}
+            elseif currentwordnr > 2 then libreadline.filecompl() end
+          elseif dbgcommand == "setw" or dbgcommand == "eval" or dbgcommand == "dump" then
+            str, expr, sep = simplify_expression(line:sub(6, endpos))
+            if expr and expr ~= "" then
+              local token = loadstring("return " .. expr)
+              if token then
+                token = token()
+                local ttoken = type(token)
+                if ttoken == 'table' and (sep == '.' or sep == ':') then
+                  for k, v in pairs(token) do
+                    if type(k) == 'string' and (sep ~= ':' or type(v) == "function") then
+                      add(k..postfix(v))
+                    end
+                  end
+                elseif sep == '[' and ttoken == 'table' then
+                  for k in pairs(token) do
+                    if type(k) == 'number' then
+                      add(k .. "]")
+                    end
+                  end
+                  if word ~= "" then add_eval_env() end
+                end
+              end
+            end
+            if #matches == 0 then add_eval_env() end
+          elseif dbgcommand == "set" then
+            if currentwordnr == 2 then add_stack_level() end
+          elseif dbgcommand == "delw" then
+            if currentwordnr == 2 then add_watch_index() end
+          elseif dbgcommand == "tron" then
+            if currentwordnr == 2 then matches = {'c', 'r', 'l'} end
+          elseif dbgcommand == "show" then
+            if currentwordnr == 2 then matches = {'0', '1', '2', '3', '-'}
+            elseif currentwordnr > 2 then libreadline.filecompl() end
+          elseif dbgcommand == "help" then
+            if currentwordnr == 2 then add_command_list() end
+          elseif dbgcommand == "what" then
+            if currentwordnr == 2 then add_eval_env("funconly") end
+          end
+        end
+      end
+
+      libreadline.luacompl()
+
+      local dbgcommand = nil
+      local linetoken = {}
+      line = line:find('^%s*$') and '' or line:match('^%s*(.*%S)')
+      for token in line:gmatch('%S+') do
+        linetoken[#linetoken+1] = token
+        if dbgcommand == nil and hints[token] then dbgcommand = token end
+      end
+      complete_command(linetoken, (#word == 0 and #linetoken+1 or #linetoken), dbgcommand)
+      return matches
+    end
+  )
+end
 
 --{{{  local function getinfo(level,field)
 
@@ -504,9 +758,9 @@ local function show(breakfile,breakline,file,line,before,after)
     if i >= (line-before) then
       if i > (line+after) then break end
       if i == breakline and file == breakfile then
-        io.write(i..'***\t'..l..'\n')
+        io.write(color.black..i..color.green..'***\t'..color.reset..l..'\n')
       else
-        io.write(i..'\t'..l..'\n')
+        io.write(color.black..i..color.reset..'\t'..l..'\n')
       end
     end
   end
@@ -530,7 +784,12 @@ local function gu( func, k )
   return function() k=k+1 return debug.getupvalue( func, k ) end
 end
 
-local  traceinfo
+local traceinfo
+
+-- return the local traceinfo to use it in readline completion
+function __gettraceinfo__()
+  return traceinfo
+end
 
 local function tracestack(l)
   local l = l + 1                        --NB: +1 to get level relative to caller
@@ -576,7 +835,7 @@ local function trace(set)
   local mark
   for level,ar in ipairs(traceinfo) do
     if level == set then
-      mark = '***'
+      mark = color.green..'***'..color.reset
     else
       mark = ''
     end
@@ -867,9 +1126,18 @@ end
 
 --{{{  local function debugger_loop(ev, vars, file, line, idx_watch)
 
+-- eval_env is local outside the local function debugger_loop() so that
+-- readline completion can use its information via __getevalenv__()
+local eval_env = {}
+
+-- return the local eval_env to use it in readline completion
+function __getevalenv__()
+  return eval_env
+end
+
 local function debugger_loop(ev, vars, file, line, idx_watch)
 
-  local eval_env  = vars or {}
+  eval_env = vars or {}
   local breakfile = file or '?'
   local breakline = line or 0
 
@@ -922,9 +1190,9 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
   --}}}
 
   while true do
-    io.write("[DEBUG]> ")
-    local line = io.read("*line")
+    local line = readline(prompt)
     if line == nil then io.write('\n'); line = 'exit' end
+    saveline(line)
 
     if string.find(line, "^[a-z]+") then
       command = string.sub(line, string.find(line, "^[a-z]+"))
@@ -1215,8 +1483,13 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
         io.write(string.match(hints[command],"(.+)|")..description..'\n')
       else
         for _,v in pairs(hints) do
-          local _,_,h = string.find(v,"(.+)|")
-          io.write(h..'\n')
+          local _,_,summary = string.find(v,"(.+)|")
+          local dbgcmd = tostring(string.match(tostring(summary), "^%a+"))
+          if rlbinds ~= nil and rlbinds[dbgcmd] ~= nil then
+            io.write(summary..color.black..' ['..rlbinds[dbgcmd]["key"]..']'..color.reset..'\n')
+          else
+            io.write(summary..'\n')
+          end
         end
       end
       --}}}
@@ -1226,8 +1499,9 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
       return 'stop'
       --}}}
 
-    elseif line ~= '' then
-      --{{{  just execute whatever it is in the current context
+    elseif command == "eval" then
+      --{{{  execute whatever it is in the current context
+      line = string.sub(line, 6, -1)
 
       --map line starting with "=..." to "return ..."
       if string.sub(line,1,1) == '=' then line = string.gsub(line,'=','return ',1) end
@@ -1255,8 +1529,12 @@ local function debugger_loop(ev, vars, file, line, idx_watch)
           io.write("Run error: "..res[2]..'\n')
         end
       end
-
       --}}}
+
+    else
+      if command ~= '' then
+        io.write(color.red.."not a valid debugger command '"..command.."'\n"..color.reset)
+      end
     end
   end
 
@@ -1465,3 +1743,4 @@ end
 _TRACEBACK = debug.traceback             --Lua 5.0 function
 
 --}}}
+-- vim: ts=2 sw=2 sts=2
