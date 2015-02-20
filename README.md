@@ -68,7 +68,7 @@ Just place clidebugger in some directory and add that directory to the ``LUA_PAT
 ```sh
 mkdir $HOME/clidebugger
 cd $HOME/clidebugger
-git clone https://github.com/stormc/clidebugger.git .
+git clone https://github.com/stormc/lua-clidebugger.git .
 export LUA_PATH=;;$HOME/clidebugger/?.lua
 ```
 You may want to put the ``export LUA_PATH=...`` statement somewhere appropriate in your shell's startup files.
